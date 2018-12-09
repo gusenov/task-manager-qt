@@ -3,9 +3,11 @@
 
 #include <QAbstractTableModel>
 #include <windows.h>
-#include <TlHelp32.h>
+#include <tlhelp32.h>
 #include <psapi.h>
 #include <winternl.h>
+#include <QtCharts>
+#include <QtCharts/QBarSet>
 
 #define WINDOWS_TICK 10000000.0
 
@@ -66,6 +68,18 @@ public:
     // Получить время ЦП проведенное в режиме пользователя:
     double getUserTimeByTid(DWORD tid);
 
+    // Получить серии даннных о времени ЦП для заданного процесса:
+    QtCharts::QStackedBarSeries* getStackedBarSeriesForPid(DWORD pid);
+
+    // Очистить серии данных:
+    void clearStackedBarSeries();
+
+    // Получить метки в виде ИД потоков для отображения по оси X:
+    QStringList* getCategoriesForPid(DWORD pid);
+
+    // Получить максимальное время ЦП для заданного процесса:
+    qreal getMaxCpuTimeForPid(DWORD pid);
+
 private:
 
     // Список потоков:
@@ -78,7 +92,23 @@ private:
     void addThreadToList(PTHREADENTRY32 p, THREAD_STATE s, FILETIME kernel_t, FILETIME user_t);
 
     // Указатель на функцию NtQuerySystemInformation:
-    t_NtQueryInfo mf_NtQueryInfo = 0;
+    t_NtQueryInfo mf_NtQueryInfo = nullptr;
+
+    // Серии даннных о времени ЦП для заданного процесса:
+    QMap<DWORD, QtCharts::QStackedBarSeries*> stackedBarSeriesMap;
+
+    // Метки в виде ИД потоков для отображения по оси X:
+    QMap<DWORD, QStringList*> categories;
+
+    // Столбцы диаграммы:
+
+    QMap<DWORD, QtCharts::QBarSet*> kernelTimeMapPidBarSet;
+
+    QMap<DWORD, QtCharts::QBarSet*> userTimeMapPidBarSet;
+
+    QtCharts::QBarSet* getKernelTimeBarSetForPid(DWORD pid);
+
+    QtCharts::QBarSet* getUserTimeBarSetForPid(DWORD pid);
 
 };
 

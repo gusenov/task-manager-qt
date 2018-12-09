@@ -7,6 +7,9 @@
 #include "processestablemodel.h"
 #include "threadstablemodel.h"
 #include "pidfilterproxymodel.h"
+#include "updater.h"
+#include <QtCharts>
+#include <windows.h>
 
 namespace Ui {
 class MainWindow;
@@ -22,7 +25,7 @@ class MainWindow : public QMainWindow
 public:
 
     // Конструктор:
-    explicit MainWindow(QWidget *parent = 0);
+    explicit MainWindow(QWidget *parent = nullptr);
 
     // Деструктор:
     ~MainWindow();
@@ -43,6 +46,18 @@ private slots:
 
     // Пункт меню Вид -> Обновить (F5):
     void on_actionRefresh_triggered();
+
+    // Освободить память выделенную под диаграмму процессов:
+    void destroyProcessesChart();
+
+    // Создать диаграмму процессов:
+    void createProcessesChart();
+
+    // Освободить память выделенную под диаграмму потоков:
+    void destroyThreadsChart();
+
+    // Создать диаграмму потоков:
+    void createThreadsChart();
 
 private:
     Ui::MainWindow *ui;
@@ -73,6 +88,32 @@ private:
     // Текстовая метка показывающая время проведенное процессором в режиме пользователя:
     QLabel *cpuUserTime;
 
+    // Таймер для обновления диаграмм:
+    Updater updater;
+
+    // Элементы диаграммы процессов:
+
+    QChartView *processesChartView = nullptr;
+    QtCharts::QChart *processesChart = nullptr;
+    QDateTimeAxis *processesAxisTime = nullptr;
+    QValueAxis *processesAxisMemory = nullptr;
+    QValueAxis *processesAxisThreadsCount = nullptr;
+
+    // Элементы диаграммы потоков:
+
+    QChartView *threadsChartView = nullptr;
+    QtCharts::QChart *threadsChart = nullptr;
+    QBarCategoryAxis *threadsAxisX = nullptr;
+    QValueAxis *threadsAxisCPU = nullptr;
+
+    // ИД последнего выделенного процесса:
+    DWORD lastSelectedPid;
+
+    // ИД последнего выделенного потока:
+    DWORD lastSelectedTid;
+
+    // Критическая секция для входа в режим обновления:
+    CRITICAL_SECTION CrSectionUpd;
 };
 
 #endif // MAINWINDOW_H

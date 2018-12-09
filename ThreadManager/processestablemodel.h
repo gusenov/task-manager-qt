@@ -2,9 +2,14 @@
 #define PROCESSESTABLEMODEL_H
 
 #include <QAbstractTableModel>
+#include <QHash>
+#include <QtCharts/QLineSeries>
 #include <windows.h>
-#include <TlHelp32.h>
+#include <tlhelp32.h>
 #include <psapi.h>
+#include <QDateTime>
+
+#define MAX_HISTORY_ITEMS 100
 
 class ProcessesTableModel;
 typedef void (ProcessesTableModel::*PointerToProcessHandler)(PPROCESSENTRY32, SIZE_T, DWORD);
@@ -49,13 +54,31 @@ public:
     int getProcessesCount() const;
 
     // Получить ИД процесса по номеру строки:
-    int getPidByRowIndex(int rowIndex) const;
+    DWORD getPidByRowIndex(int rowIndex) const;
 
     // Получить родительский ИД прцесса по номеру строки:
-    int getParentPidByRowIndex(int rowIndex) const;
+    DWORD getParentPidByRowIndex(int rowIndex) const;
 
     // Обновить данные о процессах:
     void refreshData(void);
+
+    // Получить итератор серий данных о потреблении памяти процессами:
+    QMapIterator<DWORD, QtCharts::QLineSeries*> getMemSeriesIterator();
+
+    // Получить серии данных о потреблении памяти заданным процессом:
+    QtCharts::QLineSeries* getMemSeriesForPid(DWORD pid);
+
+    // Получить максимальное потребление памяти заданным процессов:
+    qreal getMaxMemForPid(DWORD pid);
+
+    // Получить серии данных о количестве потоков у заданного процесса:
+    QtCharts::QLineSeries* getThreadCountSeriesForPid(DWORD pid);
+
+    // Получить максимальное количество потоков у заданного процесса:
+    qreal getMaxThreadCountForPid(DWORD pid);
+
+    // Получить точку отсчета:
+    QDateTime getMinTimeForPid(DWORD pid);
 
 private:
 
@@ -67,6 +90,12 @@ private:
 
     // Добавить процесс в отображаемый список процессов:
     void addTaskToList(PPROCESSENTRY32 p, SIZE_T mem, DWORD pri);
+
+    // Серии данных о потреблении памяти:
+    QMap<DWORD, QtCharts::QLineSeries*> memSeries;
+
+    // Серии данных о количестве потоков:
+    QMap<DWORD, QtCharts::QLineSeries*> threadCountSeries;
 
 };
 

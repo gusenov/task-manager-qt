@@ -5,4 +5,5 @@
 void PidFilterProxyModel::setPidFilter(const QString& regExp)
 {
     pidRegExp.setPattern(regExp);
+    invalidateFilter();
 }

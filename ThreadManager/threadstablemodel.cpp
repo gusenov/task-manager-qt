@@ -11,7 +11,7 @@ ThreadsTableModel::ThreadsTableModel(QObject *parent)
     // Указатель на функцию NtQuerySystemInformation:
     mf_NtQueryInfo = (t_NtQueryInfo)GetProcAddress(GetModuleHandleA("NtDll.dll"), "NtQuerySystemInformation");
 
-    loopThroughThreads(addThreadToList);
+    loopThroughThreads(&ThreadsTableModel::addThreadToList);
 }
 
 // Заголовки строк:
@@ -34,17 +34,17 @@ QVariant ThreadsTableModel::headerData(int section, Qt::Orientation orientation,
             switch (section)
             {
                 case 0:
-                    return tr("ИД процесса\n(PID)");
+                    return tr("ИД\nпроцесса\n(PID)");
                 case 1:
-                    return tr("ИД потока\n(TID)");
+                    return tr("ИД\nпотока\n(TID)");
                 case 2:
-                    return tr("Базовый приоритет\n(от 0 до 31)");
+                    return tr("Базовый\nприоритет\n(от 0 до 31)");
                 case 3:
                     return tr("Состояние");
                 case 4:
-                    return tr("Время ядра\nЦП (с)");
+                    return tr("Время\nядра\nЦП (с)");
                 case 5:
-                    return tr("Время пользователя\nЦП (с)");
+                    return tr("Время\nпользователя\nЦП (с)");
                 default:
                     break;
             }
@@ -137,6 +137,31 @@ void ThreadsTableModel::addThreadToList(PTHREADENTRY32 p, THREAD_STATE s, FILETI
     ti.userTime = (static_cast<__int64>(kernel_t.dwHighDateTime) << 32 | user_t.dwLowDateTime) / WINDOWS_TICK;
 
     tlist.append(ti);
+
+    // ИД процесса:
+    DWORD pid = ti.thread.th32OwnerProcessID;
+
+    // Получаем QBarSet для процесса:
+    QtCharts::QBarSet* kernelTimeBarSet = getKernelTimeBarSetForPid(pid);
+
+    // Добавляем в QBarSet значение kernel time для очередного потока:
+    *kernelTimeBarSet << ti.kernelTime;
+
+    QtCharts::QBarSet* userTimeBarSet = getUserTimeBarSetForPid(pid);
+    *userTimeBarSet << ti.userTime;
+
+    // Записываем ИД потока в список категорий:
+    QStringList* category = getCategoriesForPid(pid);
+    *category << QString::number(ti.thread.th32ThreadID);
+
+    QStackedBarSeries* stackedBarSeries = getStackedBarSeriesForPid(pid);
+    if (!stackedBarSeries->barSets().contains(kernelTimeBarSet)) {
+        stackedBarSeries->append(kernelTimeBarSet);
+    }
+    if (!stackedBarSeries->barSets().contains(userTimeBarSet)) {
+        stackedBarSeries->append(userTimeBarSet);
+    }
+
 }
 
 // Количество потоков:
@@ -155,6 +180,7 @@ int ThreadsTableModel::loopThroughThreads(PointerToThreadHandler threadHandler)
     BYTE* mp_Data = 0;
     DWORD mu32_DataSize = 0;
     ULONG u32_Needed = 0;
+    NTSTATUS s32_Status;
 
     // Пытаемся получить до тех пор пока не получится
     // данные о процессах через NtQuerySystemInformation:
@@ -168,7 +194,7 @@ int ThreadsTableModel::loopThroughThreads(PointerToThreadHandler threadHandler)
         }
 
         // Вызов функции NtQuerySystemInformation:
-        NTSTATUS s32_Status = mf_NtQueryInfo(SystemProcessInformation, mp_Data, mu32_DataSize, &u32_Needed);
+        s32_Status = mf_NtQueryInfo(SystemProcessInformation, mp_Data, mu32_DataSize, &u32_Needed);
 
         // Если памяти оказалось недостаточно:
         if (s32_Status == STATUS_INFO_LENGTH_MISMATCH)
@@ -198,7 +224,7 @@ int ThreadsTableModel::loopThroughThreads(PointerToThreadHandler threadHandler)
             else if (!NT_SUCCESS(s32_Status))
             {
                 // Выводим код ошибки:
-                qDebug() << "NTSTATUS =" << s32_Status;
+                qDebug() << QString("NTSTATUS = %1").arg(s32_Status, 0, 16);
 
                 // Освобождаем выделенную память:
                 LocalFree(mp_Data);
@@ -215,10 +241,16 @@ int ThreadsTableModel::loopThroughThreads(PointerToThreadHandler threadHandler)
         else
         {
             // Выводим код ошибки:
-            qDebug() << "NTSTATUS =" << s32_Status;
+            qDebug() << QString("NTSTATUS = %1").arg(s32_Status, 0, 16);
+            break;
         }
     }
     while (1);
+
+    if (!NT_SUCCESS(s32_Status))
+    {
+        return threadsCount;
+    }
 
     // Получаем информацию о процессах с помощью Microsoft Tool Help Library:
     HANDLE hSnapShot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
@@ -383,8 +415,25 @@ char const* getTextOfState(THREAD_STATE s)
 // Обновить данные о потоках:
 void ThreadsTableModel::refreshData(void)
 {
+    beginResetModel();
+
     tlist.clear();
-    loopThroughThreads(addThreadToList);
+
+    clearStackedBarSeries();
+
+    kernelTimeMapPidBarSet.clear();
+    userTimeMapPidBarSet.clear();
+
+    // Очищаем все категории:
+    QMapIterator<DWORD, QStringList*> categoriesIt(categories);
+    while (categoriesIt.hasNext()) {
+        categoriesIt.next();
+        categoriesIt.value()->clear();
+    }
+
+    loopThroughThreads(&ThreadsTableModel::addThreadToList);
+
+    endResetModel();
 }
 
 // Получить время ЦП проведенное в режиме ядра:
@@ -409,4 +458,119 @@ double ThreadsTableModel::getUserTimeByTid(DWORD tid)
         }
     }
     return 0;
+}
+
+// Получить серии даннных о времени ЦП для заданного процесса:
+QStackedBarSeries* ThreadsTableModel::getStackedBarSeriesForPid(DWORD pid)
+{
+    QMap<DWORD, QtCharts::QStackedBarSeries*>::const_iterator stackedBarSeriesIt = stackedBarSeriesMap.find(pid);
+    QtCharts::QStackedBarSeries* stackedBarSeries = nullptr;
+    if (stackedBarSeriesIt == stackedBarSeriesMap.end())
+    {
+        stackedBarSeries = new QtCharts::QStackedBarSeries();
+        stackedBarSeriesMap.insert(pid, stackedBarSeries);
+    }
+    else
+    {
+        stackedBarSeries = stackedBarSeriesIt.value();
+    }
+    return stackedBarSeries;
+}
+
+// Очистить серии данных:
+void ThreadsTableModel::clearStackedBarSeries()
+{
+    QMapIterator<DWORD, QtCharts::QStackedBarSeries*> stackedBarSeriesIt(stackedBarSeriesMap);
+    while (stackedBarSeriesIt.hasNext()) {
+        stackedBarSeriesIt.next();
+        QtCharts::QStackedBarSeries* stackedBarSeries = stackedBarSeriesIt.value();
+        stackedBarSeries->clear();
+    }
+}
+
+// Получить метки в виде ИД потоков для отображения по оси X:
+QStringList* ThreadsTableModel::getCategoriesForPid(DWORD pid)
+{
+    QMap<DWORD, QStringList*>::const_iterator categoriesIt = categories.find(pid);
+    QStringList *category;
+    if (categoriesIt == categories.end())
+    {
+        category = new QStringList();
+        categories.insert(pid, category);
+    }
+    else
+    {
+        category = categoriesIt.value();
+    }
+    return category;
+}
+
+// Получить время ЦП проведенное в режиме ядра:
+QtCharts::QBarSet* ThreadsTableModel::getKernelTimeBarSetForPid(DWORD pid)
+{
+    QMap<DWORD, QtCharts::QBarSet*>::const_iterator it = kernelTimeMapPidBarSet.find(pid);
+
+    QtCharts::QBarSet *barSet;
+    if (it == kernelTimeMapPidBarSet.end())
+    {
+        barSet = new QtCharts::QBarSet("Время ядра ЦП (с)");
+        barSet->setColor(Qt::red);
+        kernelTimeMapPidBarSet.insert(pid, barSet);
+    }
+    else
+    {
+        barSet = it.value();
+    }
+
+    return barSet;
+}
+
+// Получить время ЦП проведенное в режиме пользователя:
+QtCharts::QBarSet* ThreadsTableModel::getUserTimeBarSetForPid(DWORD pid)
+{
+    QMap<DWORD, QtCharts::QBarSet*>::const_iterator it = userTimeMapPidBarSet.find(pid);
+
+    QtCharts::QBarSet *barSet;
+    if (it == userTimeMapPidBarSet.end())
+    {
+        barSet = new QtCharts::QBarSet("Время пользователя ЦП (с)");
+        barSet->setColor(Qt::green);
+        userTimeMapPidBarSet.insert(pid, barSet);
+    }
+    else
+    {
+        barSet = it.value();
+    }
+
+    return barSet;
+}
+
+// Получить максимальное время ЦП для заданного процесса:
+qreal ThreadsTableModel::getMaxCpuTimeForPid(DWORD pid)
+{
+    QtCharts::QBarSet* kernelTimeBarSet = getKernelTimeBarSetForPid(pid);
+    qreal maxKernelTime = 0;
+
+    QtCharts::QBarSet* userTimeBarSet = getUserTimeBarSetForPid(pid);
+    qreal maxUserTime = 0;
+
+    for (int i = 0; i < kernelTimeBarSet->count(); ++i)
+    {
+        if (kernelTimeBarSet->at(i) > maxKernelTime)
+        {
+            maxKernelTime = kernelTimeBarSet->at(i);
+        }
+    }
+
+    for (int i = 0; i < userTimeBarSet->count(); ++i)
+    {
+        if (userTimeBarSet->at(i) > maxUserTime)
+        {
+            maxUserTime = userTimeBarSet->at(i);
+        }
+    }
+
+    qreal sum = maxKernelTime + maxUserTime;
+
+    return sum > 1 ? sum : 1;
 }

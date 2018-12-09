@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>800</width>
-    <height>600</height>
+    <width>1015</width>
+    <height>575</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -17,20 +17,40 @@
    <widget class="QTableView" name="processesTableView">
     <property name="geometry">
      <rect>
-      <x>10</x>
-      <y>10</y>
-      <width>781</width>
-      <height>261</height>
+      <x>5</x>
+      <y>5</y>
+      <width>500</width>
+      <height>250</height>
      </rect>
     </property>
    </widget>
    <widget class="QTableView" name="threadsTableView">
     <property name="geometry">
      <rect>
-      <x>10</x>
-      <y>290</y>
-      <width>781</width>
-      <height>241</height>
+      <x>5</x>
+      <y>260</y>
+      <width>500</width>
+      <height>250</height>
+     </rect>
+    </property>
+   </widget>
+   <widget class="QWidget" name="processesWidget" native="true">
+    <property name="geometry">
+     <rect>
+      <x>510</x>
+      <y>5</y>
+      <width>500</width>
+      <height>250</height>
+     </rect>
+    </property>
+   </widget>
+   <widget class="QWidget" name="threadsWidget" native="true">
+    <property name="geometry">
+     <rect>
+      <x>510</x>
+      <y>260</y>
+      <width>500</width>
+      <height>250</height>
      </rect>
     </property>
    </widget>
@@ -40,7 +60,7 @@
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>800</width>
+     <width>1015</width>
      <height>21</height>
     </rect>
    </property>

@@ -4,7 +4,7 @@
 #
 #-------------------------------------------------
 
-QT       += core gui
+QT       += core gui charts
 
 greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
 
@@ -28,13 +28,15 @@ SOURCES += \
         mainwindow.cpp \
     processestablemodel.cpp \
     threadstablemodel.cpp \
-    pidfilterproxymodel.cpp
+    pidfilterproxymodel.cpp \
+    updater.cpp
 
 HEADERS += \
         mainwindow.h \
     processestablemodel.h \
     threadstablemodel.h \
-    pidfilterproxymodel.h
+    pidfilterproxymodel.h \
+    updater.h
 
 FORMS += \
         mainwindow.ui

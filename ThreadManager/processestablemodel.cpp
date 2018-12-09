@@ -1,7 +1,7 @@
 #include "processestablemodel.h"
 #include <QDebug>
 #include <QFont>
-#include <Tchar.h>
+#include <tchar.h>
 
 char const* getTextOfPriority(DWORD p);
 
@@ -11,7 +11,7 @@ ProcessesTableModel::ProcessesTableModel(QObject *parent)
 {
     // Обход списка процессов
     // и обработка каждого процесса функцией addTaskToList:
-    loopThroughProcesses(addTaskToList);
+    loopThroughProcesses(&ProcessesTableModel::addTaskToList);
 }
 
 // Заголовки столбцов:
@@ -138,6 +138,50 @@ void ProcessesTableModel::addTaskToList(PPROCESSENTRY32 p, SIZE_T mem, DWORD pri
      ti.priority = pri;
 
      tlist.append(ti);
+
+
+     DWORD pid = ti.proc.th32ProcessID;
+     QMap<DWORD, QtCharts::QLineSeries*>::const_iterator valueIt = memSeries.find(pid);
+     QtCharts::QLineSeries *value;
+     if (valueIt == memSeries.end())
+     {
+         value = new QtCharts::QLineSeries();
+         value->setName("Память (КБ)");
+         value->setColor(Qt::blue);
+         value->setUseOpenGL(false);
+         memSeries.insert(pid, value);
+     }
+     else
+     {
+         value = valueIt.value();
+         if (value->count() > MAX_HISTORY_ITEMS)
+         {
+             value->removePoints(0, 1);
+         }
+     }
+     QDateTime momentInTime = QDateTime::currentDateTime();
+     //qDebug() << "momentInTime =" << momentInTime;
+     value->append(momentInTime.toMSecsSinceEpoch(), ti.mem);
+
+
+     valueIt = threadCountSeries.find(pid);
+     if (valueIt == threadCountSeries.end())
+     {
+         value = new QtCharts::QLineSeries();
+         value->setName("Счетчик потоков");
+         value->setColor(Qt::magenta);
+         value->setUseOpenGL(false);
+         threadCountSeries.insert(pid, value);
+     }
+     else
+     {
+         value = valueIt.value();
+         if (value->count() > MAX_HISTORY_ITEMS)
+         {
+             value->removePoints(0, 1);
+         }
+     }
+     value->append(momentInTime.toMSecsSinceEpoch(), ti.proc.cntThreads);
 }
 
 // Количество процессов:
@@ -147,15 +191,15 @@ int ProcessesTableModel::getProcessesCount() const
 }
 
 // Получить ИД процесса по номеру строки:
-int ProcessesTableModel::getPidByRowIndex(int rowIndex) const
+DWORD ProcessesTableModel::getPidByRowIndex(int rowIndex) const
 {
-    return (int)tlist[rowIndex].proc.th32ProcessID;
+    return tlist[rowIndex].proc.th32ProcessID;
 }
 
 // Получить родительский ИД прцесса по номеру строки:
-int ProcessesTableModel::getParentPidByRowIndex(int rowIndex) const
+DWORD ProcessesTableModel::getParentPidByRowIndex(int rowIndex) const
 {
-    return (int)tlist[rowIndex].proc.th32ParentProcessID;
+    return tlist[rowIndex].proc.th32ParentProcessID;
 }
 
 // Обход списка процессов и обработка каждого процесса функцией processHandler:
@@ -293,6 +337,72 @@ char const* getTextOfPriority(DWORD p)
 // Обновить данные о процессах:
 void ProcessesTableModel::refreshData(void)
 {
+    beginResetModel();
     tlist.clear();
-    loopThroughProcesses(addTaskToList);
+    loopThroughProcesses(&ProcessesTableModel::addTaskToList);
+    endResetModel();
+}
+
+// Получить итератор серий данных о потреблении памяти процессами:
+QMapIterator<DWORD, QtCharts::QLineSeries*> ProcessesTableModel::getMemSeriesIterator()
+{
+    return QMapIterator<DWORD, QtCharts::QLineSeries*>(memSeries);
+}
+
+// Получить серии данных о потреблении памяти заданным процессом:
+QtCharts::QLineSeries* ProcessesTableModel::getMemSeriesForPid(DWORD pid)
+{
+    QMap<DWORD, QtCharts::QLineSeries*>::const_iterator valueIt = memSeries.find(pid);
+    return valueIt == memSeries.end() ? nullptr : valueIt.value();
+}
+
+// Получить серии данных о количестве потоков у заданного процесса:
+QtCharts::QLineSeries* ProcessesTableModel::getThreadCountSeriesForPid(DWORD pid)
+{
+    QMap<DWORD, QtCharts::QLineSeries*>::const_iterator valueIt = threadCountSeries.find(pid);
+    return valueIt == threadCountSeries.end() ? nullptr : valueIt.value();
+}
+
+// Получить максимальное потребление памяти заданным процессов:
+qreal ProcessesTableModel::getMaxMemForPid(DWORD pid)
+{
+    QtCharts::QLineSeries *series = getMemSeriesForPid(pid);
+
+    qreal max = 0;
+    foreach (QPointF point, series->pointsVector())
+    {
+        if (point.y() > max)
+            max = point.y();
+    }
+
+    return max;
+}
+
+// Получить максимальное количество потоков у заданного процесса:
+qreal ProcessesTableModel::getMaxThreadCountForPid(DWORD pid)
+{
+    QtCharts::QLineSeries *series = getThreadCountSeriesForPid(pid);
+
+    qreal max = 0;
+    foreach (QPointF point, series->pointsVector())
+    {
+        if (point.y() > max)
+            max = point.y();
+    }
+
+    return max;
+}
+
+// Получить точку отсчета:
+QDateTime ProcessesTableModel::getMinTimeForPid(DWORD pid)
+{
+    QtCharts::QLineSeries *series = getMemSeriesForPid(pid);
+    if (series->count() > 0)
+    {
+        return QDateTime::fromMSecsSinceEpoch(series->at(0).x());
+    }
+    else
+    {
+        return QDateTime::currentDateTime();
+    }
 }
